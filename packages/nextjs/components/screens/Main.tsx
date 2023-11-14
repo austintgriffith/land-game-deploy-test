@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { InputBase } from "../scaffold-eth";
 import { BigNumber, ethers } from "ethers";
 import { useInterval } from "usehooks-ts";
+import { useLocalStorage } from "usehooks-ts";
 import { useAccount } from "wagmi";
 import { useZuAuth } from "zupass-auth";
 import { BackwardIcon } from "@heroicons/react/24/outline";
@@ -49,6 +50,7 @@ export const Main = () => {
   const [loadingTokensData, setLoadingTokensData] = useState<boolean>(true);
   const [totalNetWorth, setTotalNetWorth] = useState<BigNumber>(BigNumber.from("0"));
   const [dexesPaused, setDexesPaused] = useState<DexesPaused>({});
+  const [fundsClaimed, setFundsClaimed] = useLocalStorage<boolean>("fundsClaimed", false);
 
   const selectedTokenEmoji = scaffoldConfig.tokens.find(t => selectedTokenName === t.name)?.emoji;
 
@@ -241,11 +243,9 @@ export const Main = () => {
     setShowSell(true);
   };
 
-  // getFunds verifies the proof on-chain and sends credit tokens and DAI to the user
   const { data: fundsSent, isLoading: isLoadingSent } = useScaffoldContractRead({
     contractName: "ZupassDispenser",
     functionName: "sent",
-    // @ts-ignore TODO: fix the type later with readonly fixed length bigInt arrays
     args: [pcd ? JSON.parse(pcd).claim?.partialTicket.attendeeSemaphoreId : undefined],
   });
 
@@ -290,7 +290,7 @@ export const Main = () => {
           </div>
         )}
 
-        {checkedIn && !showBuy && !showSell && (
+        {checkedIn && !showBuy && !showSell && !fundsClaimed && (
           <>
             {!pcd && (
               <div className="tooltip" data-tip="Loads the Zupass UI in a modal, where you can prove your PCD.">
@@ -308,6 +308,7 @@ export const Main = () => {
                   onClick={async () => {
                     try {
                       await getFunds();
+                      setFundsClaimed(true);
                     } catch (e) {
                       notification.error(`Error: ${e}`);
                       return;
