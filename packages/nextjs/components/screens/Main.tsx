@@ -1,21 +1,33 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { InputBase } from "../scaffold-eth";
 import { BigNumber, ethers } from "ethers";
 import { useInterval } from "usehooks-ts";
 import { useAccount } from "wagmi";
+import { useZuAuth } from "zupass-auth";
 import { BackwardIcon } from "@heroicons/react/24/outline";
 import PriceChart from "~~/components/PriceChart";
 import { TokenBuy } from "~~/components/TokenBuy";
 import { TokenSell } from "~~/components/TokenSell";
 import { BurnerSigner } from "~~/components/scaffold-eth/BurnerSigner";
 import { TokenBalanceRow } from "~~/components/scaffold-eth/TokenBalanceRow";
-import { useScaffoldContract, useScaffoldContractRead } from "~~/hooks/scaffold-eth";
+import { useScaffoldContract, useScaffoldContractRead, useScaffoldContractWrite } from "~~/hooks/scaffold-eth";
 import scaffoldConfig from "~~/scaffold.config";
 import { TTokenBalance, TTokenInfo } from "~~/types/wallet";
 import { notification } from "~~/utils/scaffold-eth";
 import { ContractName } from "~~/utils/scaffold-eth/contract";
+import { generateWitness } from "~~/utils/scaffold-eth/pcd";
+import { DEVCONNECT_VALID_EVENT_IDS } from "~~/utils/zupassConstants";
 
 type DexesPaused = { [key: string]: boolean };
+
+// Get a valid event id from { supportedEvents } from "zuauth" or https://api.zupass.org/issue/known-ticket-types
+const validEventIds = DEVCONNECT_VALID_EVENT_IDS;
+const fieldsToReveal = {
+  revealAttendeeEmail: true,
+  revealEventId: true,
+  revealProductId: true,
+  revealAttendeeSemaphoreId: true,
+};
 
 /**
  * Main Screen
@@ -23,6 +35,7 @@ type DexesPaused = { [key: string]: boolean };
 export const Main = () => {
   const tokens = scaffoldConfig.tokens;
 
+  const { authenticate, pcd } = useZuAuth();
   const { address } = useAccount();
   const [processing, setProcessing] = useState(false);
   const [loadingCheckedIn, setLoadingCheckedIn] = useState(true);
@@ -44,6 +57,14 @@ export const Main = () => {
     address: address,
     alias: alias,
   };
+
+  const getProof = useCallback(async () => {
+    if (!address) {
+      notification.error("Please connect wallet");
+      return;
+    }
+    authenticate(fieldsToReveal, address, validEventIds);
+  }, [authenticate, address]);
 
   const { data: balanceSalt } = useScaffoldContractRead({
     contractName: "SaltToken",
@@ -220,6 +241,22 @@ export const Main = () => {
     setShowSell(true);
   };
 
+  // getFunds verifies the proof on-chain and sends credit tokens and DAI to the user
+  const { data: fundsSent, isLoading: isLoadingSent } = useScaffoldContractRead({
+    contractName: "ZupassDispenser",
+    functionName: "sent",
+    // @ts-ignore TODO: fix the type later with readonly fixed length bigInt arrays
+    args: [pcd ? JSON.parse(pcd).claim?.partialTicket.attendeeSemaphoreId : undefined],
+  });
+
+  // getFunds verifies the proof on-chain and sends credit tokens and DAI to the user
+  const { writeAsync: getFunds, isLoading: isGettingFunds } = useScaffoldContractWrite({
+    contractName: "ZupassDispenser",
+    functionName: "getFunds",
+    // @ts-ignore TODO: fix the type later with readonly fixed length bigInt arrays
+    args: [pcd ? generateWitness(JSON.parse(pcd)) : undefined],
+  });
+
   return (
     <>
       <div className="flex flex-col gap-2 max-w-[430px] text-center m-auto">
@@ -255,6 +292,39 @@ export const Main = () => {
 
         {checkedIn && !showBuy && !showSell && (
           <>
+            {!pcd && (
+              <div className="tooltip" data-tip="Loads the Zupass UI in a modal, where you can prove your PCD.">
+                <button className="btn btn-secondary w-full tooltip" onClick={getProof} disabled={!!pcd}>
+                  {!pcd ? "Validate Ticket" : "Ticket Validated!"}
+                </button>
+              </div>
+            )}
+
+            {pcd && (
+              <div className="tooltip" data-tip="Get credit tokens and DAI">
+                <button
+                  className="btn btn-primary w-full"
+                  disabled={!pcd || fundsSent || isLoadingSent || isGettingFunds}
+                  onClick={async () => {
+                    try {
+                      await getFunds();
+                    } catch (e) {
+                      notification.error(`Error: ${e}`);
+                      return;
+                    }
+                  }}
+                >
+                  {fundsSent ? (
+                    "Funds Sent!"
+                  ) : isGettingFunds ? (
+                    <span className="loading loading-spinner"></span>
+                  ) : (
+                    "Claim funds"
+                  )}
+                </button>
+              </div>
+            )}
+
             <div className="rounded-xl">
               <table className="table-auto border-separate ">
                 <thead>

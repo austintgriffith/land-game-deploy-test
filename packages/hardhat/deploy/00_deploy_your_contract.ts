@@ -101,6 +101,21 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
     }
   }
 
+  const zupassDispenser = await deploy("ZupassDispenser", {
+    from: deployer,
+    args: [saltContract.address],
+    log: true,
+    autoMine: true,
+  });
+
+  const sendXDaiToZupassDispenser = await signer.sendTransaction({
+    to: zupassDispenser.address,
+    value: hre.ethers.utils.parseEther("1"),
+  });
+  sendXDaiToZupassDispenser.wait();
+
+  await saltContract.transfer(zupassDispenser.address, hre.ethers.utils.parseEther("5000"));
+
   const disperseFunds = await deploy("DisperseFunds", {
     from: deployer,
     args: [salt.address],
