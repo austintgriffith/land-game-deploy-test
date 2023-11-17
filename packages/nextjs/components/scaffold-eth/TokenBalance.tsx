@@ -18,7 +18,7 @@ export const TokenBalance = ({ amount }: TTokenBalanceProps) => {
         </span>
         <div className="flex flex-col">
           <span className="text-2xl font-medium">
-            {amount && ethers.utils.formatEther(amount.sub(amount.mod(1e14)))}
+            {amount && amount.mod && ethers.utils.formatEther(amount.sub(amount.mod(1e14)))}
           </span>
         </div>
       </>
